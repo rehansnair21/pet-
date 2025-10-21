@@ -1,7 +1,7 @@
 <?php 
 if (isset($_GET['action']) && $_GET['action'] === 'logout') {
-    session_destroy(); // destroy all session data
-    header("Location: login.php"); // redirect to login page
+    session_destroy();
+    header("Location: login.php");
     exit;
 }
 
@@ -217,53 +217,61 @@ if($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])) {
     $product->price = $_POST['price'];
     $product->stock_quantity = $_POST['stock_quantity'];
 
-    // ---- begin: handle uploaded image file (new) ----
-    $uploadedPath = ''; // default empty (will use placeholder if empty)
-    if (!empty($_FILES['image_file']) && $_FILES['image_file']['error'] !== UPLOAD_ERR_NO_FILE) {
+    // Handle image upload
+    $uploadedPath = '';
+    
+    if (!empty($_FILES['image_file']['name'])) {
         $file = $_FILES['image_file'];
-
-        // basic validation
-        $allowedTypes = ['image/jpeg','image/jpg','image/png','image/webp'];
+        
+        // Validation
+        $allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
         $maxSize = 2 * 1024 * 1024; // 2 MB
-
+        
+        // Get actual mime type
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mimeType = finfo_file($finfo, $file['tmp_name']);
+        finfo_close($finfo);
+        
         if ($file['error'] !== UPLOAD_ERR_OK) {
-            $message = '<div class="alert error">Upload error. Please try again.</div>';
+            $message = '<div class="alert error">Upload error code: ' . $file['error'] . '. Please try again.</div>';
         } elseif ($file['size'] > $maxSize) {
-            $message = '<div class="alert error">Image too large. Max 2MB.</div>';
-        } elseif (!in_array(mime_content_type($file['tmp_name']), $allowedTypes, true)) {
-            $message = '<div class="alert error">Invalid image type. Use JPG, PNG or WEBP.</div>';
+            $message = '<div class="alert error">Image too large. Maximum size is 2MB.</div>';
+        } elseif (!in_array($mimeType, $allowedTypes)) {
+            $message = '<div class="alert error">Invalid image type. Please use JPG, PNG or WEBP format.</div>';
         } else {
-            // ensure uploads directory exists
+            // Create uploads directory if it doesn't exist
             $uploadDir = __DIR__ . '/uploads/products';
             if (!is_dir($uploadDir)) {
-                mkdir($uploadDir, 0755, true);
+                if (!mkdir($uploadDir, 0755, true)) {
+                    $message = '<div class="alert error">Failed to create upload directory. Check permissions.</div>';
+                }
             }
-
-            // sanitize and generate unique filename
-            $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
-            $safeBase = preg_replace('/[^A-Za-z0-9_\-]/', '_', pathinfo($file['name'], PATHINFO_FILENAME));
-            $unique = time() . '_' . bin2hex(random_bytes(6));
-            $filename = $safeBase . '_' . $unique . '.' . $ext;
-
-            $dest = $uploadDir . '/' . $filename;
-            if (move_uploaded_file($file['tmp_name'], $dest)) {
-                // store path relative to web root (adjust if your web root differs)
-                $uploadedPath = 'uploads/products/' . $filename;
-            } else {
-                $message = '<div class="alert error">Failed to save uploaded image.</div>';
+            
+            if ($message === '') {
+                // Generate unique filename
+                $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+                $filename = 'product_' . time() . '_' . uniqid() . '.' . $ext;
+                $destination = $uploadDir . '/' . $filename;
+                
+                // Move uploaded file
+                if (move_uploaded_file($file['tmp_name'], $destination)) {
+                    $uploadedPath = 'uploads/products/' . $filename;
+                } else {
+                    $message = '<div class="alert error">Failed to save uploaded image. Check folder permissions.</div>';
+                }
             }
         }
     }
-
-    // set image_url to uploaded path (or empty string)
+    
+    // Set image URL (empty if no upload or upload failed)
     $product->image_url = $uploadedPath;
-
-    // if there was no earlier error message from upload, attempt DB insert
+    
+    // Insert product if no errors
     if ($message === '') {
         if($product->addProduct()) {
-            $message = '<div class="alert success">Product added successfully!</div>';
+            $message = '<div class="alert success">✓ Product added successfully!</div>';
         } else {
-            $message = '<div class="alert error">Failed to add product.</div>';
+            $message = '<div class="alert error">Failed to add product to database.</div>';
         }
     }
 }
